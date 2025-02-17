@@ -109,6 +109,8 @@ export const createChatCompletion =
                 };
 
             } catch (error) {
+
+
                 // Detailed error handling
                 if (error instanceof z.ZodError) {
                     throw new HttpsError('invalid-argument', 'Invalid input', {
