@@ -4,9 +4,10 @@
   "scripts": {
     "lint": "../../aiy-service/node_modules/.bin/eslint ",
     "serve": "firebase emulators:start --only functions ",
+    "serve:debug": "firebase emulators:start --only functions --inspect-functions",
     "shell": "firebase functions:shell",
     "start": "npm run shell",
-    "deploy": "firebase deploy --only ",
+    "deploy": "firebase deploy --only functions",
     "logs": "firebase functions:log"
   },
   "engines": {

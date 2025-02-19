@@ -2,22 +2,20 @@
   "name": "firebase-chat",
   "version": "0.1.0",
   "private": true,
+  "main": "src/pages/index.tsx",
   "scripts": {
     "dev": "next dev --turbopack",
-    "build": "next build",
-    "deploy": "next build && firebase deploy",
-    "start": "next start",
+    "build": "DEBUG=* next build",
+    "deploy": "DEBUG=* next build && firebase deploy",
+    "start": "npx serve@latest out",
     "lint": "eslint . --ext .js,.jsx,.ts,.tsx",
     "clean": "rm -rf .next out"
   },
   "dependencies": {
-    "@ai-sdk/openai": "^1.1.12",
     "@headlessui/react": "^2.2.0",
     "@heroicons/react": "^2.2.0",
     "@radix-ui/react-slot": "^1.1.2",
     "@tailwindcss/postcss": "^4.0.6",
-    "ai": "^4.1.41",
-    "axios": "^1.7.9",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "firebase": "^11.3.1",
@@ -32,8 +30,6 @@
     "remeda": "^2.20.2",
     "shiki": "^2.4.2",
     "sonner": "^1.7.4",
-    "tailwind-merge": "^3.0.1",
-    "tailwindcss-animate": "^1.0.7",
     "zod": "^3.24.2"
   },
   "devDependencies": {
@@ -41,6 +37,7 @@
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "autoprefixer": "^10.4.20",
     "eslint": "^9",
     "eslint-config-next": "15.1.7",
     "postcss": "^8.5.2",

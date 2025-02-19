@@ -1,0 +1,46 @@
+### Test Firebase Cloud Function: createChatCompletion
+POST http://127.0.0.1:5001/aiy-chat-e9077/us-central1/createChatCompletion
+Content-Type: application/json
+#Authorization: Bearer YOUR_FIREBASE_AUTH_TOKEN
+
+{
+  "model": "gpt-3.5-turbo",
+  "messages": [
+    {
+      "role": "system",
+      "content": "You are a helpful assistant."
+    },
+    {
+      "role": "user",
+      "content": "Write me an inspiring quote about technology."
+    }
+  ],
+  "max_tokens": 100,
+  "temperature": 0.7,
+  "n": 1,
+  "stream": false
+}
+
+
+### Test Firebase Cloud Function: createChatCompletion
+POST https://us-central1-aiy-chat-e9077.cloudfunctions.net/createChatCompletion
+Content-Type: application/json
+#Authorization: Bearer YOUR_FIREBASE_AUTH_TOKEN
+
+{
+  "model": "gpt-3.5-turbo",
+  "messages": [
+    {
+      "role": "system",
+      "content": "You are a helpful assistant."
+    },
+    {
+      "role": "user",
+      "content": "Write me an inspiring quote about technology."
+    }
+  ],
+  "max_tokens": 100,
+  "temperature": 0.7,
+  "n": 1,
+  "stream": false
+}

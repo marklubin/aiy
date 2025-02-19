@@ -1,28 +1,18 @@
 import axios from 'axios';
+import cors from 'cors'; // Import CORS middleware
 import { z } from 'zod';
-import { onCall, HttpsError } from 'firebase-functions/v2/https';
-
+import { onRequest } from 'firebase-functions/v2/https'; // Switch to onRequest for CORS flexibility
 import admin from 'firebase-admin';
 import { getRemoteConfig } from 'firebase-admin/remote-config';
+import { HttpsError } from 'firebase-functions/v2/https';
+
+// Initialize the CORS middleware with permissive settings (restrict origin in production)
+const corsHandler = cors({ origin: true });
 
 
-
-
-
-
-function getAPIKey(){
-    if (!admin.apps.length) {
-        admin.initializeApp();
-    }
-    const remoteConfig = getRemoteConfig();
-    const apiKey = remoteConfig.getString('openai_api_key');
-    if (!apiKey) {
-        throw new HttpsError('failed-precondition', 'OpenAI API key is not configured');
-    }
-
-    return apiKey;
+async function getAPIKey() {
+    return process.env.OPEN_AI_API_KEY;
 }
-
 
 // Comprehensive Zod schema matching OpenAI API request format
 const CompletionRequestSchema = z.object({
@@ -43,16 +33,17 @@ const CompletionRequestSchema = z.object({
 });
 
 export const createChatCompletion =
-    onCall({
-            memory: '1GB',
-            timeoutSeconds: 540,
-        },
-        async (data, context) => {
+    onRequest(async (req, res) => {
+        // Use CORS middleware to handle preflight requests
+        corsHandler(req, res, async () => {
             try {
-                // Validate input against OpenAI-like schema
-                const validatedInput = CompletionRequestSchema.parse(data);
+                // Log the request body for debugging
+                console.log('Incoming request:', req.body);
 
-                // Prepare messages for API call
+                // Validate the input using the Zod schema
+                const validatedInput = CompletionRequestSchema.parse(req.body);
+
+                // Prepare messages for the OpenAI API request
                 const messagesPayload = validatedInput.messages ||
                     (validatedInput.prompt
                         ? [{ role: "user", content:
@@ -62,7 +53,7 @@ export const createChatCompletion =
                         }]
                         : []);
 
-                // Construct payload exactly matching OpenAI API
+                // Construct payload exactly matching OpenAI API specification
                 const payload = {
                     model: validatedInput.model,
                     messages: messagesPayload,
@@ -76,9 +67,9 @@ export const createChatCompletion =
                     ...(validatedInput.frequency_penalty && { frequency_penalty: validatedInput.frequency_penalty })
                 };
 
-                const apiKey = getAPIKey();
+                const apiKey = await getAPIKey();
 
-                // Make request to OpenAI API
+                // Make the request to OpenAI API
                 const openaiResponse = await axios.post(
                     'https://api.openai.com/v1/chat/completions',
                     payload,
@@ -90,42 +81,26 @@ export const createChatCompletion =
                     }
                 );
 
-                // Return exact same response structure as OpenAI API
-                return {
+                // Return the response back to the client
+                res.status(200).json({
                     id: openaiResponse.data.id || `chatcmpl-${Date.now()}`,
                     object: "chat.completion",
                     created: Math.floor(Date.now() / 1000),
                     model: openaiResponse.data.model || validatedInput.model,
                     choices: openaiResponse.data.choices.map((choice, index) => ({
                         index,
-                        message: choice.message,
-                        finish_reason: choice.finish_reason || "stop"
-                    })),
-                    usage: openaiResponse.data.usage || {
-                        prompt_tokens: 0,
-                        completion_tokens: 0,
-                        total_tokens: 0
-                    }
-                };
-
+                        ...choice
+                    }))
+                });
             } catch (error) {
+                console.error('Error:', error);
 
-
-                // Detailed error handling
-                if (error instanceof z.ZodError) {
-                    throw new HttpsError('invalid-argument', 'Invalid input', {
-                        issues: error.issues
-                    });
-                }
-
-                if (axios.isAxiosError(error)) {
-                    console.error('Axios error:', error);
-                    throw new HttpsError('internal', 'API request failed', {
-                        details: error.response?.data || error.message
-                    });
-                }
-
-                console.error('Unexpected error:', error);
-                throw new HttpsError('internal', 'An unexpected error occurred');
+                // Respond with appropriate error
+                const statusCode = error.response?.status || 400;
+                const errorMessage = error.response?.data?.message || error.message;
+                res.status(statusCode).json({
+                    error: errorMessage
+                });
             }
         });
+    });
