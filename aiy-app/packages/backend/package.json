@@ -7,7 +7,9 @@
     "dev": "AWS_PROFILE=apiana-local nodemon server.js",
     "build": "echo 'Server build complete'",
     "test": "node tests/runTests.js",
-    "test:e2e": "node tests/e2e/api.test.js",
+    "test:unit": "node tests/runTests.js",
+    "test:e2e": "node tests/e2e/websocket.test.js",
+    "test:all": "npm run test:unit && npm run test:e2e",
     "clean": "rm -rf out node_modules"
   },
   "dependencies": {
