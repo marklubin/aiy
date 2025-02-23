@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "AWS_PROFILE=apiana-local nodemon server.js",
     "build": "echo 'Server build complete'",
-    "test": "NODE_OPTIONS=--experimental-vm-modules jest --runInBand",
+    "test": "node tests/runTests.js",
     "test:e2e": "node tests/e2e/api.test.js",
     "clean": "rm -rf out node_modules"
   },

@@ -1,15 +1,16 @@
+// MessageContextBuilder.js
 import { v4 as uuidv4 } from 'uuid';
 
 class MessageContextBuilder {
-    constructor({ rollingWindowCache, queryPinecone, fileCache, userId, segmentId }) {
-        if (!rollingWindowCache || !queryPinecone || !fileCache || !userId || !segmentId) {
+    constructor({ rollingWindowCache, pineconeClient, fileCache, userId, segmentId }) {
+        if (!rollingWindowCache || !pineconeClient || !fileCache || !userId || !segmentId) {
             throw new Error("❌ Missing required dependencies.");
         }
 
         this.rollingWindowCache = rollingWindowCache;
-        this.queryPinecone = queryPinecone;
+        this.pineconeClient = pineconeClient;
         this.fileCache = fileCache;
-        
+
         this.userId = userId;
         this.segmentId = segmentId;
         this.sessionId = uuidv4();
@@ -39,13 +40,20 @@ class MessageContextBuilder {
             throw new Error("Critical error: Unable to load essential AI files.");
         }
     }
-    
 
-    async buildContext(searchText) {
+    async buildContext(messages) {
+        // Extract last user message for semantic search
+        const lastUserMessage = messages.filter(msg => msg.role === "user").pop();
+        if (!lastUserMessage) {
+            throw new Error("No valid user message found in messages array.");
+        }
+
         await Promise.all([
             this.fetchRequiredFiles(),
-            this.rollingWindowCache.preload()
+            this.rollingWindowCache.preload(),
+            this.querySemanticContext(lastUserMessage.content)
         ]);
+
         return {
             session_id: this.sessionId,
             user_id: this.userId,
@@ -53,10 +61,23 @@ class MessageContextBuilder {
             timestamp: this.timestamp,
             system_instructions: this.systemInstructions,
             context_usage_instructions: this.contextUsageInstructions,
-            rolling_window: this.rollingWindowCache.getMessages(),
+            rolling_window: this.rollingWindowCache.getContextMessages(),
             retrieved_context: this.pineconeResults,
             user_context: this.userContext
         };
+    }
+
+    async querySemanticContext(searchText) {
+        try {
+            const searchResults = await this.pineconeClient.queryPinecone(searchText);
+            this.pineconeResults = searchResults.result?.hits?.map(hit => ({
+                content: hit.fields.text,
+                score: hit._score
+            })) || [];
+        } catch (error) {
+            console.error("Error querying Pinecone:", error);
+            this.pineconeResults = [];
+        }
     }
 }
 

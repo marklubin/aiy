@@ -6,16 +6,12 @@ import dotenv from "dotenv";
 import OpenAI from "openai";
 import MessageContextBuilder from "./MessageContextBuilder.js";
 import prepareOpenAIRequest from "./prepareOpenAIRequest.js";
-import S3FileCache from "./S3FileCache.js";
-import DDBRollingWindowMessageCache from "./DDBRollingWindowMessageCache.js";
-import { queryPinecone } from "./pinecone.js";
 import path from 'path';
-
 import { fileURLToPath } from "url";
+
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const rootPath = path.join(__dirname, '..', '..');
 
-// Load .env from monorepo root
 dotenv.config({ path: path.join(rootPath, '.env') });
 
 const app = express();
@@ -24,108 +20,104 @@ app.use(express.json());
 const server = http.createServer(app);
 
 const openai = new OpenAI({
-  apiKey: process.env.OPEN_AI_API_KEY, // ✅ Corrected API Key Variable
+    apiKey: process.env.OPEN_AI_API_KEY,
 });
 
-// ✅ Create cache instances
 const instructionsCache = new S3FileCache(process.env.S3_BUCKET, 3600);
 const rollingWindowCache = new DDBRollingWindowMessageCache(
-  "AIYMessages",
-  "user_456",
-  "default_segment"
+    "AIYMessages",
+    "user_456",
+    "default_segment"
 );
 
-// ✅ Preload rolling window cache
 await rollingWindowCache.preload();
 
-/**
- * ✅ WebSocket Server - Uses `MessageContextBuilder` Correctly
- */
 const wss = new WebSocketServer({ server });
 
+// MessageContextBuilder.js
+import { v4 as uuidv4 } from 'uuid';
 
+class MessageContextBuilder {
+    constructor({ rollingWindowCache, queryPinecone, fileCache, userId, segmentId }) {
+        if (!rollingWindowCache || !queryPinecone || !fileCache || !userId || !segmentId) {
+            throw new Error("❌ Missing required dependencies.");
+        }
 
-async function storeMessagesInDynamoDB(userMessage, assistantMessage) {
-    try {
-        console.log("📝 Storing messages in DynamoDB...");
+        this.rollingWindowCache = rollingWindowCache;
+        this.queryPinecone = queryPinecone;
+        this.fileCache = fileCache;
 
-        await rollingWindowCache.storeMessage({ role: "user", content: userMessage });
-        await rollingWindowCache.storeMessage({ role: "assistant", content: assistantMessage });
+        this.userId = userId;
+        this.segmentId = segmentId;
+        this.sessionId = uuidv4();
+        this.timestamp = new Date().toISOString();
+        this.messages = [];
+        this.pineconeResults = [];
+        this.systemInstructions = null;
+        this.contextUsageInstructions = null;
+        this.userContext = {};
 
-        console.log("✅ Messages successfully stored in DynamoDB.");
-    } catch (error) {
-        console.error("❌ Failed to store messages in DynamoDB:", error);
+        this.requiredFiles = {
+            systemInstructions: 'system-message.txt',
+            contextUsageInstructions: 'context-usage.txt'
+        };
+    }
+
+    async fetchRequiredFiles() {
+        try {
+            this.systemInstructions = await this.fileCache.fetchFile(this.requiredFiles.systemInstructions);
+            this.contextUsageInstructions = await this.fileCache.fetchFile(this.requiredFiles.contextUsageInstructions);
+
+            if (!this.systemInstructions || !this.contextUsageInstructions) {
+                throw new Error("Missing required AI instruction files.");
+            }
+        } catch (error) {
+            console.error("Error fetching required AI instructions:", error);
+            throw new Error("Critical error: Unable to load essential AI files.");
+        }
+    }
+
+    async buildContext(messages) {
+        // Extract last user message for semantic search
+        const lastUserMessage = messages.filter(msg => msg.role === "user").pop();
+        if (!lastUserMessage) {
+            throw new Error("No valid user message found in messages array.");
+        }
+
+        await Promise.all([
+            this.fetchRequiredFiles(),
+            this.rollingWindowCache.preload(),
+            this.querySemanticContext(lastUserMessage.content)
+        ]);
+
+        return {
+            session_id: this.sessionId,
+            user_id: this.userId,
+            segment_id: this.segmentId,
+            timestamp: this.timestamp,
+            system_instructions: this.systemInstructions,
+            context_usage_instructions: this.contextUsageInstructions,
+            rolling_window: this.rollingWindowCache.getContextMessages(),
+            retrieved_context: this.pineconeResults,
+            user_context: this.userContext
+        };
+    }
+
+    async querySemanticContext(searchText) {
+        try {
+            const searchResults = await this.queryPinecone(searchText);
+            this.pineconeResults = searchResults.matches?.map(match => ({
+                content: match.record.text,
+                score: match.score
+            })) || [];
+        } catch (error) {
+            console.error("Error querying Pinecone:", error);
+            this.pineconeResults = [];
+        }
     }
 }
 
-wss.on("connection", (ws) => {
-  console.log("🟢 Client connected to WebSocket");
-
-  ws.on("message", async (message) => {
-    try {
-        const parsedMessage = JSON.parse(message.toString());
-
-        console.log("📥 Received WebSocket Message:", parsedMessage);
-
-        if (!parsedMessage.messages || !Array.isArray(parsedMessage.messages)) {
-            ws.send("Error: Invalid messages format.");
-            return;
-        }
-
-        console.log("📨 Messages Array:", parsedMessage.messages);
-
-        // ✅ Extract last user message
-        const lastUserMessage = parsedMessage.messages.filter(msg => msg.role === "user").pop()?.content;
-
-        if (!lastUserMessage) {
-            ws.send("Error: No valid user message found.");
-            return;
-        }
-
-        console.log("🔍 User Query for Context:", lastUserMessage);
-
-        // ✅ Build context
-        const contextBuilder = new MessageContextBuilder({
-            rollingWindowCache,
-            queryPinecone,
-            fileCache: instructionsCache,
-            userId: "user_456",
-            segmentId: "default_segment",
-        });
-
-        const messageContext = await contextBuilder.buildContext(lastUserMessage);
-        console.log("📜 Generated Message Context:", messageContext);
-
-        // ✅ Prepare OpenAI request
-        const openAIRequest = prepareOpenAIRequest(parsedMessage.messages, messageContext); // ✅ Properly structured request
-
-        console.log("🚀 Sending OpenAI-Compatible Request:", openAIRequest);
-
-        // ✅ Call OpenAI API (or compatible backend)
-        const response = await openai.chat.completions.create({
-            messages: openAIRequest,
-            stream: true,
-            model: "gpt-4",
-        });
-
-        let assistantResponse = ""; // ✅
-        // ✅ Stream response character by character
-        for await (const part of response) {
-            const chunk = part.choices[0]?.delta?.content || "";
-            ws.send(chunk);
-            assistantResponse += chunk;
-            await new Promise((res) => setTimeout(res, 50));
-        }
-
-        ws.send("__END__");
-        storeMessagesInDynamoDB(lastUserMessage, assistantResponse);
-    } catch (error) {
-        console.error("❌ WebSocket Error:", error);
-        ws.send("Error: Failed to process message.");
-    }
-});
-  ws.on("close", () => console.log("🔴 Client disconnected"));
-});
+export default MessageContextBuilder;
 
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => console.log(`🚀 WebSocket Server running on port ${PORT}`));

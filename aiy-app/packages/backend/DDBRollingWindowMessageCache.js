@@ -2,35 +2,37 @@ import AWS from 'aws-sdk';
 import awsConfig from './awsConfig.js';
 
 class DDBRollingWindowMessageCache {
-    constructor(tableName, userId, segmentId, flushThreshold = 10) {
+    constructor(docClient, tableName, userId, segmentId, windowSize = 10) {
         if (!tableName || !userId || !segmentId) {
             throw new Error("❌ Table name, user ID, and segment ID are required.");
         }
+        if (!docClient) {
+            throw new Error("❌ DynamoDB DocumentClient is required");
+        }
 
-        this.db = new AWS.DynamoDB.DocumentClient(awsConfig);
+        this.db = docClient;
         this.tableName = tableName;
-        this.partitionKey = `${userId}#${segmentId}`; // ✅ Concat userId + segmentId
-        this.flushThreshold = flushThreshold;
+        this.partitionKey = `${userId}#${segmentId}`;
+        this.windowSize = windowSize;
         this.messages = [];
     }
-
     async preload() {
         try {
-            console.log(`📂 Preloading last 50 messages for: ${this.partitionKey}`);
-    
+            console.log(`📂 Preloading last ${this.windowSize} messages for: ${this.partitionKey}`);
+
             const params = {
                 TableName: this.tableName,
                 KeyConditionExpression: "#pk = :partitionKey",
                 ExpressionAttributeNames: {
-                    "#pk": "userId#segmentId"  // ✅ Alias for partition key
+                    "#pk": "userId_segmentId"
                 },
                 ExpressionAttributeValues: {
                     ":partitionKey": this.partitionKey
                 },
-                Limit: 50,
-                ScanIndexForward: false
+                Limit: this.windowSize,
+                ScanIndexForward: false // Get most recent messages first
             };
-    
+
             const data = await this.db.query(params).promise();
             this.messages = data.Items || [];
             console.log(`✅ Loaded ${this.messages.length} messages from DynamoDB.`);
@@ -38,48 +40,88 @@ class DDBRollingWindowMessageCache {
             console.error(`❌ Error preloading messages from DynamoDB:`, error);
         }
     }
-    
-    addMessage(message) {
-        const newMessage = {
-            userId_segmentId: this.partitionKey,
-            epochTimestamp: Date.now(),
-            message: message
-        };
 
-        this.messages.push(newMessage);
+    async storeMessage(message) {
+        try {
+            const newMessage = {
+                userId_segmentId: this.partitionKey,
+                epochTimestamp: Date.now(),
+                role: message.role,
+                content: message.content
+            };
 
-        if (this.messages.length >= this.flushThreshold) {
-            this.flushToDynamoDB();
+            // Store in DynamoDB
+            await this.db.put({
+                TableName: this.tableName,
+                Item: newMessage
+            }).promise();
+
+            // Update in-memory window
+            this.messages.push(newMessage);
+            if (this.messages.length > this.windowSize) {
+                this.messages.shift();
+            }
+
+            console.log(`✅ Message stored successfully`);
+        } catch (error) {
+            console.error("❌ Error storing message:", error);
+            throw error;
         }
     }
 
-    async flushToDynamoDB() {
-        try {
-            console.log(`💾 Flushing ${this.messages.length} messages to DynamoDB...`);
-
-            const putRequests = this.messages.map(msg => ({
-                PutRequest: {
-                    Item: msg
-                }
+    getContextMessages() {
+        // Return messages in format suitable for OpenAI context
+        return this.messages
+            .sort((a, b) => a.epochTimestamp - b.epochTimestamp) // Ensure chronological order
+            .map(msg => ({
+                role: msg.role,
+                content: msg.content
             }));
+    }
 
+    async clearMessages() {
+        try {
             const params = {
-                RequestItems: {
-                    [this.tableName]: putRequests
+                TableName: this.tableName,
+                KeyConditionExpression: "#pk = :partitionKey",
+                ExpressionAttributeNames: {
+                    "#pk": "userId_segmentId"
+                },
+                ExpressionAttributeValues: {
+                    ":partitionKey": this.partitionKey
                 }
             };
 
-            await this.db.batchWrite(params).promise();
+            const data = await this.db.query(params).promise();
 
-            this.messages = []; // ✅ Clear cache after flush
-            console.log("✅ Messages successfully written to DynamoDB.");
+            // Delete items in batches of 25 (DynamoDB limit)
+            const items = data.Items || [];
+            const batchSize = 25;
+
+            for (let i = 0; i < items.length; i += batchSize) {
+                const batch = items.slice(i, i + batchSize);
+                const deleteRequests = batch.map(item => ({
+                    DeleteRequest: {
+                        Key: {
+                            userId_segmentId: item.userId_segmentId,
+                            epochTimestamp: item.epochTimestamp
+                        }
+                    }
+                }));
+
+                await this.db.batchWrite({
+                    RequestItems: {
+                        [this.tableName]: deleteRequests
+                    }
+                }).promise();
+            }
+
+            this.messages = [];
+            console.log("✅ All messages cleared");
         } catch (error) {
-            console.error("❌ Error writing messages to DynamoDB:", error);
+            console.error("❌ Error clearing messages:", error);
+            throw error;
         }
-    }
-
-    getMessages() {
-        return this.messages;
     }
 }
 
