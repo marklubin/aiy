@@ -1,5 +1,5 @@
-### Test Firebase Cloud Function: createChatCompletion
-POST http://127.0.0.1:5001/aiy-chat-e9077/us-central1/createChatCompletion
+### Test Firebase Cloud Function: api
+POST http://127.0.0.1:5001/aiy-chat-e9077/us-central1/api/complete
 Content-Type: application/json
 #Authorization: Bearer YOUR_FIREBASE_AUTH_TOKEN
 
@@ -22,8 +22,8 @@ Content-Type: application/json
 }
 
 
-### Test Firebase Cloud Function: createChatCompletion
-POST https://us-central1-aiy-chat-e9077.cloudfunctions.net/createChatCompletion
+### Test Firebase Cloud Function: api
+POST https://us-central1-aiy-chat-e9077.cloudfunctions.net/api/complete
 Content-Type: application/json
 #Authorization: Bearer YOUR_FIREBASE_AUTH_TOKEN
 
@@ -44,3 +44,27 @@ Content-Type: application/json
   "n": 1,
   "stream": false
 }
+
+
+### Test Insert Document
+POST http://127.0.0.1:5001/aiy-chat-e9077/us-central1/api/insert-document
+Content-Type: application/json
+
+{
+    "documentId": "tech-article-  1",
+    "text": "Artificial Intelligence is transforming the way we live and work. From autonomous vehicles to smart assistants, AI technologies are becoming increasingly integrated into our daily lives. The potential for AI to solve complex problems and enhance human capabilities is vast, but it also raises important ethical considerations that society must address.",
+    "referenceURL": "https://example.com/ai-article"
+}
+
+### Test Insert Document (Production)
+POST https://us-central1-aiy-chat-e9077.cloudfunctions.net/api/insert-document
+Content-Type: application/json
+
+{
+    "documentId": "tech-article-1",
+    "text": "Artificial Intelligence is transforming the way we live and work. From autonomous vehicles to smart assistants, AI technologies are becoming increasingly integrated into our daily lives. The potential for AI to solve complex problems and enhance human capabilities is vast, but it also raises important ethical considerations that society must address.",
+    "referenceURL": "https://example.com/ai-article"
+}
+
+### Test Dump Context Query (Local)
+GET http://127.0.0.1:5001/aiy-chat-e9077/us-central1/api/dump-context-for-query?text=What are the ethical considerations of Artificial Intelligence?

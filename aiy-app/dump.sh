@@ -1,0 +1,1 @@
+find backend -type f | while read file; do echo "##### FILE: $file #####"; cat "$file"; echo -e "\n"; done > backend_dump.txt

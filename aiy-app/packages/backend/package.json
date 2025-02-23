@@ -1,0 +1,27 @@
+{
+  "name": "@aiy/backend",
+  "version": "1.0.0",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "dev": "AWS_PROFILE=apiana-local nodemon server.js",
+    "build": "echo 'Server build complete'",
+    "test": "NODE_OPTIONS=--experimental-vm-modules jest --runInBand",
+    "test:e2e": "node tests/e2e/api.test.js",
+    "clean": "rm -rf out node_modules"
+  },
+  "dependencies": {
+    "aws-sdk": "^2.1692.0",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "express": "^4.21.2",
+    "openai": "^4.29.0",
+    "ws": "^8.18.1",
+    "zod": "^3.24.2"
+  },
+  "devDependencies": {
+    "@jest/globals": "^29.7.0",
+    "nodemon": "^2.0.22",
+    "supertest": "^7.0.0"
+  }
+}

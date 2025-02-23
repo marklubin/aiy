@@ -1,0 +1,20 @@
+{
+  "name": "aiy",
+  "private": true,
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "concurrently \"npm run dev -w @aiy/backend\" \"npm run dev -w @aiy/frontend\"",
+    "build": "npm run build --ws",
+    "test": "npm run test --ws",
+    "clean": "npm run clean --ws",
+    "lint": "eslint ."
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.20.0",
+    "concurrently": "^8.2.2",
+    "eslint": "^9.20.1",
+    "eslint-config-google": "^0.14.0"
+  }
+}
